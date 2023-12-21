@@ -61,7 +61,7 @@ const Minter: React.FC = () => {
               denom: "inj",
             },
           ],
-          gas: "400000",
+          gas: "800000",
         },
         pubKey: publicKey,
         sequence: parseInt(accountDetails.account.base_account.sequence, 10),
