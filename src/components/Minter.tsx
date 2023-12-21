@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { getQueryClient } from "@sei-js/core";
 // import { HdPath, stringToPath } from "@cosmjs/crypto";
 import { getNetworkInfo, Network } from "@injectivelabs/networks";
@@ -11,12 +11,15 @@ import {
   TxClient,
   TxGrpcClient,
   // DEFAULT_STD_FEE,
-  ChainRestAuthApi,
   createTransaction,
+  TxRestClient
 } from "@injectivelabs/sdk-ts";
 import { BigNumberInBase } from "@injectivelabs/utils";
 // import { BigNumber } from "bignumber.js";
 import Link from "next/link";
+import 'dotenv/config'
+
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL as string
 
 const network = getNetworkInfo(Network.Mainnet);
 
@@ -27,6 +30,7 @@ const Minter: React.FC = () => {
   isEndRef.current = isEnd;
   const [logs, setLogs] = useState<string[]>([]);
   const [count, setCount] = useState<number>(0);
+  const [feeRate, setFeeRate] = useState("400000")
 
   const mintFn = useCallback(async (privateKey: PrivateKey) => {
     try {
@@ -39,9 +43,8 @@ const Minter: React.FC = () => {
 
       const publicKey = privateKey.toPublicKey().toBase64();
 
-      const accountDetails = await new ChainRestAuthApi(
-        network.rest
-      ).fetchAccount(injectiveAddress);
+      const accountDetailsResponse = await fetch(`${RPC_URL}/cosmos/auth/v1beta1/accounts/${injectiveAddress}`)
+      const accountDetails = await accountDetailsResponse.json()
 
       const msg = MsgSend.fromJSON({
         amount,
@@ -53,7 +56,7 @@ const Minter: React.FC = () => {
         message: msg,
         memo: btoa(
           `data:,{"p":"injrc-20","op":"mint","tick":"INJS","amt":"1000"}`
-        ), //data:,{"p":"injrc-20","op":"mint","tick":"INJS","amt":"2000"}
+        ),
         fee: {
           amount: [
             {
@@ -61,7 +64,7 @@ const Minter: React.FC = () => {
               denom: "inj",
             },
           ],
-          gas: "800000",
+          gas: feeRate,
         },
         pubKey: publicKey,
         sequence: parseInt(accountDetails.account.base_account.sequence, 10),
@@ -80,26 +83,27 @@ const Minter: React.FC = () => {
       /** Calculate hash of the transaction */
       console.log(`Transaction Hash: ${TxClient.hash(txRaw)}`);
 
-      const txService = new TxGrpcClient(network.grpc);
+      const txRestClient = new TxRestClient(RPC_URL)
 
       /** Simulate transaction */
-      const simulationResponse = await txService.simulate(txRaw);
-      console.log(
-        `Transaction simulation response: ${JSON.stringify(
-          simulationResponse.gasInfo
-        )}`
-      );
+      // const simulationResponse = await txRestClient.simulate(txRaw);
+      // console.log(
+      //   `Transaction simulation response: ${JSON.stringify(
+      //     simulationResponse.gasInfo
+      //   )}`
+      // );
 
       /** Broadcast transaction */
-      const txResponse = await txService.broadcast(txRaw);
-      console.log(txResponse);
+      const txResponse = await txRestClient.broadcast(txRaw);
+      console.log('txResponse', txResponse);
       setCount((prev) => prev + 1);
       setLogs((pre) => [...pre, `铸造完成, txhash: ${TxClient.hash(txRaw)}`]);
     } catch (e) {
       // sleep 1s
+      console.error('mintFn error', e)
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-  }, []);
+  }, [feeRate]);
 
   const walletMint = useCallback(
     async (m: string) => {
@@ -112,9 +116,7 @@ const Minter: React.FC = () => {
       // const wallet = await DirectSecp256k1Wallet.fromKey(Buffer.from(priv.toPrivateKeyHex().slice(2)), chain);
       setLogs((pre) => [...pre, `成功导入钱包: ${address.address}`]);
 
-      const queryClient = await getQueryClient(
-        "https://sentry.lcd.injective.network:443"
-      );
+      const queryClient = await getQueryClient(RPC_URL);
       const result = await queryClient.cosmos.bank.v1beta1.balance({
         address: address.address,
         denom,
@@ -197,6 +199,10 @@ const Minter: React.FC = () => {
           value={mnemonic}
           onChange={(e) => setMnemonic(e.target.value)}
         />
+      </div>
+      <div>
+        <div>fee rate:</div>
+        <input type="text" style={{ border: '1px solid black' }} value={feeRate} onChange={(e) => setFeeRate(e.target.value)} />
       </div>
       <div className="flex w-[400px] justify-center space-x-6 mt-4">
         <button
